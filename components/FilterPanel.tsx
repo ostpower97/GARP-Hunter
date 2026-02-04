@@ -39,7 +39,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ filters, setFilters, disabled
             disabled={disabled}
             className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
           />
-          <p className="text-[10px] text-slate-500 mt-1">Niedriger ist besser (Unter 1.5 ideal)</p>
+          <p className="text-[10px] text-slate-500 mt-1">Niedriger ist besser (Standard GARP &lt; 1.5, High Growth &lt; 3.0)</p>
         </div>
 
         {/* MIN GROWTH */}
@@ -72,14 +72,14 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ filters, setFilters, disabled
             type="range"
             name="maxPe"
             min="10"
-            max="100"
+            max="150"
             step="5"
             value={filters.maxPe}
             onChange={handleChange}
             disabled={disabled}
             className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
           />
-          <p className="text-[10px] text-slate-500 mt-1">Vermeidet überhypte Aktien</p>
+          <p className="text-[10px] text-slate-500 mt-1">Erlaubt höhere Bewertungen für Wachstum</p>
         </div>
 
          {/* MIN ROE */}
