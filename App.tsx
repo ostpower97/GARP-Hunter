@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { INDICES, DEFAULT_FILTERS } from './constants';
 import { StockData, FilterSettings } from './types';
 import { fetchStockDetails } from './services/yahooService';
@@ -16,8 +17,7 @@ function App() {
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   
-  // Debug State
-  const [debugMode, setDebugMode] = useState<boolean>(false);
+  const [debugMode, setDebugMode] = useState<boolean>(true);
   const [logs, setLogs] = useState<string[]>([]);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -25,231 +25,173 @@ function App() {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   }, []);
 
-  // Scroll to bottom of logs
   useEffect(() => {
     if (logContainerRef.current) {
         logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs, debugMode]);
 
-  // Scan logic
   const scanMarket = useCallback(async (indexId: string) => {
     setLoading(true);
     setError(null);
     setProgress(0);
     setStocks([]); 
-    setLogs([]); // Clear logs on new scan
-    addLog(`Starting scan for index: ${indexId}`);
+    setLogs([]);
+    addLog(`YAHOO ENGINE: Initialisiere Scan für ${indexId}...`);
     
     const indexDef = INDICES.find(i => i.id === indexId);
     if (!indexDef) {
-        const msg = "Index nicht gefunden.";
-        setError(msg);
-        addLog(`[FATAL] ${msg}`);
+        setError("Index nicht gefunden.");
         setLoading(false);
         return;
     }
 
     const tickers = indexDef.tickers;
     const total = tickers.length;
-    addLog(`Found ${total} tickers to scan.`);
-
-    const batchSize = 3; 
+    
+    // BatchSize=1 für maximale Stabilität (Sequentielles Abarbeiten)
+    // Yahoo Query API mag zu viele parallele Requests über denselben Proxy oft nicht.
     const results: StockData[] = [];
 
-    for (let i = 0; i < total; i += batchSize) {
-      const batch = tickers.slice(i, i + batchSize);
+    for (let i = 0; i < total; i++) {
+      const sym = tickers[i];
+      const stock = await fetchStockDetails(sym, "", addLog);
       
-      const promises = batch.map(sym => fetchStockDetails(sym, addLog));
-      const batchResults = await Promise.all(promises);
+      if (stock) {
+        results.push(stock);
+        setStocks(prev => [...prev, stock]);
+        addLog(`[SUCCESS] ${sym} geladen.`);
+      }
       
-      const validData = batchResults.filter((s): s is StockData => s !== null);
-      results.push(...validData);
+      setProgress(Math.round(((i + 1) / total) * 100));
       
-      setStocks(prev => [...prev, ...validData]);
-      setProgress(Math.round(((i + batch.length) / total) * 100));
-      
-      // Kleiner Delay um Rate Limits zu vermeiden
+      // Kurze Pause zur Schonung der API
       await new Promise(r => setTimeout(r, 200));
     }
 
-    addLog(`Scan complete. Found ${results.length} valid stocks.`);
+    addLog(`SCAN KOMPLETT: ${results.length} Kandidaten erfolgreich analysiert.`);
     setLoading(false);
     setProgress(100);
   }, [addLog]);
 
-  // Trigger scan when index changes
   useEffect(() => {
     scanMarket(selectedIndex);
   }, [selectedIndex, scanMarket]);
 
-  // Apply filters locally
   useEffect(() => {
     const filtered = stocks.filter(s => {
-      // 1. Must have valid PEG (or at least valid PE + Growth to be considered)
-      if (s.pegRatio === null && (s.forwardPE === null || s.earningsGrowth === null)) return false;
-
-      // 2. PEG Check 
-      if (s.pegRatio !== null && s.pegRatio > filters.maxPeg) return false;
-      
-      // 3. PE Check
-      if (s.forwardPE !== null && s.forwardPE > filters.maxPe) return false;
-
-      // 4. Growth Check
-      if (s.earningsGrowth !== null && s.earningsGrowth < filters.minGrowth) return false;
-      
-      // 5. ROE Check
+      // GARP Regeln
+      if (s.pegRatio === null) return false;
+      if (s.pegRatio > filters.maxPeg) return false;
+      if (s.trailingPE !== null && s.trailingPE > filters.maxPe) return false;
       if (s.returnOnEquity !== null && s.returnOnEquity < filters.minRoe) return false;
-
+      if (s.earningsGrowth !== null && s.earningsGrowth < filters.minGrowth) return false;
       return true;
     });
 
-    filtered.sort((a, b) => {
-      const pegA = a.pegRatio || 999;
-      const pegB = b.pegRatio || 999;
-      return pegA - pegB;
-    });
-
+    filtered.sort((a, b) => (a.pegRatio || 999) - (b.pegRatio || 999));
     setFilteredStocks(filtered);
   }, [stocks, filters]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 pb-20 relative">
-      
-      {/* Header */}
-      <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-10">
+    <div className="min-h-screen bg-slate-950 text-slate-200 pb-20 font-sans">
+      <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 backdrop-blur-md bg-opacity-90">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20">
-              G
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-indigo-500/20">Y!</div>
+            <div>
+              <h1 className="text-lg font-black tracking-tight leading-none">GARP HUNTER</h1>
+              <p className="text-[10px] text-indigo-400 font-bold tracking-widest uppercase mt-1">Yahoo Stable Engine</p>
             </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-              GARP Hunter <span className="text-xs text-blue-400 font-mono border border-blue-900 bg-blue-900/20 px-1 rounded ml-1">PRO</span>
-            </h1>
           </div>
           
-          <div className="flex items-center gap-4">
-            <div className="text-xs text-slate-500 hidden sm:block">
-              Powered by Yahoo Finance
-            </div>
-            <button 
-                onClick={() => setDebugMode(!debugMode)}
-                className={`p-2 rounded hover:bg-slate-800 transition-colors ${debugMode ? 'text-green-400' : 'text-slate-500'}`}
-                title="Debug Log öffnen"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 1-7.77"/><path d="M12 20c3.3 0 6-2.7 6-6v-3a4 4 0 0 0-1-7.77"/><path d="M12 12v8"/><path d="M16 16v4"/><path d="M8 16v4"/>
-                </svg>
-            </button>
+          <div className="flex items-center gap-3">
+             <div className="hidden md:flex flex-col items-end mr-4">
+                <span className="text-[10px] text-slate-500 uppercase font-bold">Terminal Status</span>
+                <span className="text-xs text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                  Connected to Query2
+                </span>
+             </div>
+             <button 
+               onClick={() => setDebugMode(!debugMode)} 
+               className={`p-2.5 rounded-xl transition-all ${debugMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-500 hover:text-white'}`}
+             >
+               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-6 4 4 8-8"/><path d="M14 8h8v8"/></svg>
+             </button>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        
-        {/* Debug Console */}
         {debugMode && (
-            <div className="mb-8 bg-black/80 border border-slate-700 rounded-lg p-4 font-mono text-xs text-green-400 h-64 overflow-hidden flex flex-col">
-                <div className="flex justify-between items-center mb-2 border-b border-slate-700 pb-2">
-                    <span className="font-bold">SYSTEM LOG</span>
-                    <button onClick={() => setLogs([])} className="text-slate-500 hover:text-white">Clear</button>
+            <div className="mb-8 bg-black/90 border border-indigo-500/30 rounded-2xl p-4 font-mono text-[10px] text-indigo-400 h-56 overflow-hidden flex flex-col shadow-2xl">
+                <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
+                    <span className="font-bold opacity-60">YAHOO_TERMINAL_V2</span>
+                    <button onClick={() => setLogs([])} className="hover:text-white uppercase text-[9px] font-bold">Clear Log</button>
                 </div>
-                <div ref={logContainerRef} className="overflow-y-auto flex-1 space-y-1">
-                    {logs.length === 0 && <span className="text-slate-600">Warte auf Logs...</span>}
-                    {logs.map((log, i) => (
-                        <div key={i} className="break-words border-b border-slate-800/50 pb-0.5">{log}</div>
-                    ))}
+                <div ref={logContainerRef} className="overflow-y-auto flex-1 scrollbar-hide space-y-0.5">
+                    {logs.map((log, i) => <div key={i} className="py-0.5 border-b border-white/5 opacity-80 hover:opacity-100">{log}</div>)}
                 </div>
             </div>
         )}
 
-        {/* Index Selector */}
-        <div className="mb-8 overflow-x-auto pb-2">
-          <div className="flex space-x-2">
-            {INDICES.map((idx) => (
-              <button
-                key={idx.id}
-                onClick={() => !loading && setSelectedIndex(idx.id)}
-                disabled={loading}
-                className={`
-                  px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all
-                  ${selectedIndex === idx.id 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25' 
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}
-                  ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
-              >
-                {idx.name}
-              </button>
-            ))}
-          </div>
+        <div className="mb-8 overflow-x-auto pb-2 flex gap-2 hide-scrollbar">
+          {INDICES.map((idx) => (
+            <button 
+              key={idx.id} 
+              onClick={() => !loading && setSelectedIndex(idx.id)} 
+              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${selectedIndex === idx.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/30' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 border border-slate-800'} ${loading ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              {idx.name}
+            </button>
+          ))}
         </div>
 
-        {/* Filter Panel */}
-        <FilterPanel 
-          filters={filters} 
-          setFilters={setFilters} 
-          disabled={loading}
-        />
+        <FilterPanel filters={filters} setFilters={setFilters} disabled={loading} />
 
-        {/* Status Bar / Progress */}
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-semibold text-white">
-            Ergebnisse: <span className="text-blue-400">{filteredStocks.length}</span> Treffer
-            <span className="text-slate-500 text-sm font-normal ml-2">
-              (aus {stocks.length} erfolgreich gescannt)
-            </span>
-          </h2>
+        <div className="flex justify-between items-end mb-8 border-b border-slate-800 pb-4">
+          <div>
+            <h2 className="text-xl font-black">SCAN RESULTS</h2>
+            <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-widest">
+              Gefiltert: <span className="text-indigo-500">{filteredStocks.length}</span> / {stocks.length} Geladen
+            </p>
+          </div>
           {loading && (
-             <div className="flex items-center gap-3">
-               <span className="text-xs text-blue-300 animate-pulse">Scanning Market... {progress}%</span>
-               <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                 <div 
-                    className="h-full bg-blue-500 transition-all duration-300 ease-out"
-                    style={{ width: `${progress}%` }}
-                 />
+             <div className="flex flex-col items-end gap-2">
+               <div className="flex items-center gap-3">
+                 <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
+                 <span className="text-[10px] font-black font-mono text-indigo-400">ANALYSING... {progress}%</span>
+               </div>
+               <div className="w-48 h-1 bg-slate-900 rounded-full overflow-hidden">
+                 <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }} />
                </div>
              </div>
           )}
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="bg-red-900/20 border border-red-500/50 text-red-200 p-4 rounded-lg mb-6">
-            {error}
-          </div>
-        )}
-
-        {/* Results Grid */}
         {filteredStocks.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredStocks.map((stock) => (
-              <StockCard key={stock.symbol} stock={stock} />
-            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredStocks.map((stock) => <StockCard key={stock.symbol} stock={stock} />)}
           </div>
         ) : (
           !loading && (
-            <div className="text-center py-20 bg-slate-900/30 rounded-xl border border-slate-800 border-dashed">
-              <p className="text-slate-400 text-lg">
-                {stocks.length > 0 
-                    ? "Aktien wurden geladen, aber alle wurden durch Ihre Filter versteckt." 
-                    : "Keine Aktien gefunden. Die API könnte blockiert sein."}
-              </p>
-              <p className="text-slate-600 text-sm mt-2">
-                {stocks.length > 0 
-                    ? "Versuchen Sie, das max. KGV oder PEG zu erhöhen. Nutzen Sie den Debug-Modus (Käfer oben rechts) zur Analyse."
-                    : "Bitte aktivieren Sie den Debug-Modus oben rechts, um den Fehler zu sehen."}
-              </p>
-              <button 
-                onClick={() => setFilters(DEFAULT_FILTERS)}
-                className="mt-4 text-blue-400 hover:text-blue-300 text-sm underline"
-              >
-                Filter zurücksetzen
-              </button>
+            <div className="text-center py-40 bg-slate-900/30 rounded-[32px] border-2 border-dashed border-slate-800">
+              <p className="text-slate-500 font-bold text-lg">Keine Treffer.</p>
+              <p className="text-xs text-slate-600 mt-2">Versuche die Filterkriterien zu lockern.</p>
             </div>
           )
         )}
       </main>
+
+      {!loading && (
+        <button 
+          onClick={() => scanMarket(selectedIndex)}
+          className="fixed bottom-8 right-8 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-50 border-4 border-slate-950"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+      )}
     </div>
   );
 }

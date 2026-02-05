@@ -1,16 +1,22 @@
+
 export interface StockData {
   symbol: string;
   shortName: string;
   currentPrice: number;
   currency: string;
   // GARP Indicators
-  pegRatio: number | null;      // Price/Earnings to Growth
-  trailingPE: number | null;    // P/E Ratio
-  forwardPE: number | null;     // Forward P/E
-  earningsGrowth: number | null; // Quarterly Earnings Growth (yoy)
-  returnOnEquity: number | null; // ROE
+  pegRatio: number | null;
+  trailingPE: number | null;
+  forwardPE: number | null;
+  earningsGrowth: number | null;
+  returnOnEquity: number | null;
+  // Additional Info
   marketCap: number | null;
   sector: string;
+  industry: string;
+  dividendYield: number | null;
+  netProfitMargin: number | null;
+  debtEquityRatio: number | null;
 }
 
 export interface IndexDefinition {
@@ -24,39 +30,4 @@ export interface FilterSettings {
   maxPe: number;
   minGrowth: number;
   minRoe: number;
-}
-
-// Helper types for Yahoo API response structure (which is nested/complex)
-export interface YahooField {
-  raw?: number;
-  fmt?: string;
-  longFmt?: string;
-}
-
-export interface YahooQuoteSummary {
-  quoteSummary: {
-    result: Array<{
-      defaultKeyStatistics?: {
-        pegRatio?: YahooField;
-        forwardPE?: YahooField;
-        earningsQuarterlyGrowth?: YahooField; // Growth
-      };
-      financialData?: {
-        currentPrice?: YahooField;
-        returnOnEquity?: YahooField;
-        grossMargins?: YahooField;
-        currency?: string;
-      };
-      price?: {
-        shortName?: string;
-        symbol?: string;
-        marketCap?: YahooField;
-        regularMarketPrice?: YahooField;
-      };
-      summaryProfile?: {
-        sector?: string;
-      };
-    }>;
-    error: any;
-  };
 }
