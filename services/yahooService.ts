@@ -7,11 +7,16 @@ export const fetchStockBatch = async (
 ): Promise<StockData[]> => {
   try {
     const tickerString = tickers.join(',');
-    // Aufruf des eigenen Vercel-Proxies
+    // Der Call geht an unseren eigenen Server-Proxy, der jetzt 'yahoo-finance2' nutzt
     const response = await fetch(`/api/proxy?tickers=${tickerString}`);
 
+    if (response.status === 504) {
+       throw new Error("Gateway Timeout - Vercel hat die Verbindung gekappt (zu viele Ticker?)");
+    }
+    
     if (!response.ok) {
-      throw new Error(`Server Error: ${response.status}`);
+      const errText = await response.text();
+      throw new Error(`Server Error ${response.status}: ${errText.substring(0, 50)}...`);
     }
 
     const data = await response.json();
@@ -22,7 +27,7 @@ export const fetchStockBatch = async (
 
     return data;
   } catch (error: any) {
-    log(`[PROXY ERROR] ${error.message}`);
+    log(`[API ERROR] ${error.message}`);
     return [];
   }
 };
